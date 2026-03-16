@@ -367,6 +367,10 @@ export default function App() {
 
       setOutput(result)
       goTab('article')
+      // Auto scroll to image after short delay
+      setTimeout(() => {
+        document.getElementById('auto-image-section')?.scrollIntoView({behavior:'smooth'})
+      }, 800)
     } catch(e) {
       setError(e.message)
     } finally {
@@ -389,15 +393,44 @@ export default function App() {
     goTab('generate')
   }
 
-  // WhatsApp
+  // ── Ad Template ──────────────────────────────────────────────────────────
+  const AD = `
+
+━━━━━━━━━━━━━━━━━━━━
+🏢 SmartBiz Business Management
+ඔයාගේ business smart කරන්න!
+✅ Inventory Management
+✅ Invoicing & Billing
+✅ Multi-branch Support
+✅ Real-time Reports
+🆓 FREE Demo එකක් ගන්න!
+📞 0706 061 964
+━━━━━━━━━━━━━━━━━━━━`
+
+  // WhatsApp — +94 auto prefix
   function sendWa() {
-    const msg = output?.whatsapp || output?.headline_si || ''
+    let num = waNum.trim().replace(/\s/g,'')
+    // Auto add +94 if Sri Lankan number without country code
+    if (num.startsWith('0') && num.length === 10) {
+      num = '94' + num.slice(1)
+    } else if (num.startsWith('+')) {
+      num = num.replace('+','')
+    }
+    const msg = (output?.whatsapp || output?.headline_si || '') + AD
     const enc = encodeURIComponent(msg)
-    const clean = waNum.replace('+','').replace(/\s/g,'')
-    window.open(clean ? `https://wa.me/${clean}?text=${enc}` : `https://wa.me/?text=${enc}`, '_blank')
+    window.open(num ? `https://wa.me/${num}?text=${enc}` : `https://wa.me/?text=${enc}`, '_blank')
     if (output?.id) supabase.from('news_posts').update({status:'approved'}).eq('id', output.id)
     setWaOpen(false)
     setSuccess(`"${(output?.headline_si||'').slice(0,35)}..." sent to WhatsApp! ✓`)
+  }
+
+  // WhatsApp Profile (direct to owner)
+  function sendToProfile() {
+    const msg = (output?.whatsapp || output?.headline_si || '') + AD
+    const enc = encodeURIComponent(msg)
+    window.open(`https://wa.me/94706061964?text=${enc}`, '_blank')
+    if (output?.id) supabase.from('news_posts').update({status:'approved'}).eq('id', output.id)
+    setSuccess(`"${(output?.headline_si||'').slice(0,35)}..." sent! ✓`)
   }
 
   // Copy
@@ -572,7 +605,9 @@ export default function App() {
                   <div style={S.cardBody}>{output.article_en}</div>
                 </div>
 
-                <ImageGenerator prompt={output.image_prompt} headline={output.headline_en || output.headline_si} />
+                <div id="auto-image-section">
+                  <ImageGenerator prompt={output.image_prompt} headline={output.headline_en || output.headline_si} autoGenerate={true} />
+                </div>
               </>
             )}
           </div>
@@ -599,18 +634,18 @@ export default function App() {
                 <div style={S.platCard('fb')}>
                   <div style={S.platHead('fb')}>
                     <div style={S.platName}><span>📘</span> Facebook</div>
-                    <button style={S.btn('outline',true)} onClick={e=>copy(output.facebook,e.target)}>Copy</button>
+                    <button style={S.btn('outline',true)} onClick={e=>copy((output.facebook||'')+AD,e.target)}>Copy</button>
                   </div>
-                  <div style={S.platBody}>{output.facebook}</div>
+                  <div style={S.platBody}>{output.facebook}{AD}</div>
                 </div>
 
                 {/* WhatsApp */}
                 <div style={S.platCard('wa')}>
                   <div style={S.platHead('wa')}>
                     <div style={S.platName}><span>💬</span> WhatsApp</div>
-                    <button style={S.btn('outline',true)} onClick={e=>copy(output.whatsapp,e.target)}>Copy</button>
+                    <button style={S.btn('outline',true)} onClick={e=>copy((output.whatsapp||'')+AD,e.target)}>Copy</button>
                   </div>
-                  <div style={S.platBody}>{output.whatsapp}</div>
+                  <div style={S.platBody}>{output.whatsapp}{AD}</div>
                 </div>
 
                 {/* Push */}
@@ -763,17 +798,25 @@ export default function App() {
           <div style={S.sheet}>
             <div style={S.sheetHandle}></div>
             <div style={{fontWeight:800,fontSize:20,marginBottom:5}}>Send to WhatsApp</div>
-            <div style={{fontSize:13,color:'var(--text3)',marginBottom:16,lineHeight:1.5}}>
-              Enter number — WhatsApp opens with message pre-filled.
+            <div style={{fontSize:13,color:'var(--text3)',marginBottom:12,lineHeight:1.5}}>
+              Number දෙන්න (07X හෝ +94X) — Ad auto attach වෙනවා.
             </div>
+
+            {/* Quick send to own profile */}
+            <button style={{...S.btn('wa'),marginBottom:10}} onClick={sendToProfile}>
+              💬 My WhatsApp (0706 061 964)
+            </button>
+
+            <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',margin:'8px 0'}}>— හෝ වෙනත් number —</div>
+
             <input
               type="tel"
               style={{...S.input,marginBottom:10}}
               value={waNum}
               onChange={e=>setWaNum(e.target.value)}
-              placeholder="+94 77 123 4567"
+              placeholder="077 123 4567 (SL auto +94)"
             />
-            <button style={S.btn('wa')} onClick={sendWa}>💬 Open WhatsApp</button>
+            <button style={S.btn('wa')} onClick={sendWa}>💬 Send WhatsApp</button>
             <button style={{...S.btn('ghost'),marginTop:8}} onClick={()=>setWaOpen(false)}>Cancel</button>
           </div>
         </div>
