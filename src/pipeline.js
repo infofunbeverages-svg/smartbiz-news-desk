@@ -17,7 +17,7 @@ async function ai(prompt, temp = 0.7) {
       'X-Title':        'SmartBiz News Desk',
     },
     body: JSON.stringify({
-      model:       'openrouter/auto',
+             'openrouter/auto',
       messages:    [{ role: 'user', content: prompt }],
       temperature: temp,
       max_tokens:  2048,
