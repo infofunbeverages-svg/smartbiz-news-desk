@@ -1,796 +1,570 @@
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from './supabase.js'
-import { runPipeline } from './pipeline.js'
-import ImageGenerator from './components/ImageGenerator.jsx'
+// SmartBiz News Desk — v6
+// Full Auto | Schedule | Real News | Auto Image | Sinhala Only
 
-// ── Styles ─────────────────────────────────────────────────────────────────
-const S = {
-  app: {
-    display:'flex',flexDirection:'column',height:'100%',
-    background:'var(--bg)',overflow:'hidden',
-  },
-  topbar: {
-    flexShrink:0,
-    background:'#0c0c10',
-    borderBottom:'1px solid var(--border)',
-    padding:'12px 16px',
-    display:'flex',alignItems:'center',justifyContent:'space-between',
-  },
-  brandRow: { display:'flex',alignItems:'center',gap:10 },
-  brandMark: {
-    width:32,height:32,
-    background:'linear-gradient(135deg,#e03030,#ff6b35)',
-    borderRadius:8,
-    display:'flex',alignItems:'center',justifyContent:'center',
-    fontWeight:800,fontSize:13,color:'#fff',fontFamily:'Syne',
-    boxShadow:'0 0 14px rgba(224,48,48,0.4)',
-  },
-  brandName: { fontWeight:800,fontSize:17,letterSpacing:'-0.3px' },
-  brandSub: { fontSize:9,color:'var(--text3)',letterSpacing:'0.14em',textTransform:'uppercase',marginTop:1 },
-  liveBadge: {
-    display:'flex',alignItems:'center',gap:5,
-    fontSize:10,fontWeight:600,color:'var(--green)',
-    letterSpacing:'0.06em',textTransform:'uppercase',
-  },
-  liveDot: {
-    width:6,height:6,borderRadius:'50%',
-    background:'var(--green)',
-    boxShadow:'0 0 6px var(--green)',
-    animation:'pulse 2s infinite',
-  },
-  tabs: {
-    flexShrink:0,
-    display:'flex',
-    background:'var(--surface)',
-    borderBottom:'1px solid var(--border)',
-    overflowX:'auto',scrollbarWidth:'none',
-  },
-  tab: (active) => ({
-    flex:1,minWidth:64,padding:'10px 6px',
-    display:'flex',flexDirection:'column',alignItems:'center',gap:2,
-    border:'none',background:'transparent',
-    color: active ? 'var(--text)' : 'var(--text3)',
-    fontFamily:'Syne',fontSize:10,fontWeight:600,
-    letterSpacing:'0.06em',textTransform:'uppercase',
-    cursor:'pointer',
-    borderBottom: active ? '2px solid var(--red)' : '2px solid transparent',
-    transition:'all 0.15s',
-  }),
-  tabIcon: { fontSize:15 },
-  main: { flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch' },
-  screen: { padding:'16px 16px 100px',animation:'fadeUp 0.2s ease' },
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { runPipeline } from './pipeline'
+import { supabase } from './supabase'
+import ImageGenerator from './components/ImageGenerator'
 
-  // Typography
-  pageTitle: { fontWeight:800,fontSize:22,letterSpacing:'-0.4px',marginBottom:4 },
-  pageSub: { fontSize:13,color:'var(--text2)',marginBottom:20,lineHeight:1.6 },
-  label: {
-    fontSize:9,fontWeight:700,letterSpacing:'0.16em',
-    textTransform:'uppercase',color:'var(--text3)',marginBottom:7,display:'block',
-  },
+// ── Constants ──────────────────────────────────────────────────────────────
+const AGENTS = [
+  { id: 1, icon: '🔍', name: 'News Hunter',    desc: 'Real web search' },
+  { id: 2, icon: '✍️',  name: 'Sinhala Writer', desc: 'Sinhala article' },
+  { id: 3, icon: '📱', name: 'Social Media',   desc: 'FB · WA · Push' },
+  { id: 4, icon: '🎨', name: 'Image AI',       desc: 'Auto generate' },
+]
 
-  // Inputs
-  input: {
-    width:'100%',background:'var(--surface2)',
-    border:'1.5px solid var(--border)',borderRadius:'var(--r)',
-    padding:'12px 14px',
-    fontFamily:'Syne',fontSize:15,color:'var(--text)',outline:'none',
-    marginBottom:14,transition:'border-color 0.15s',
-  },
+const QUICK_TOPICS = ['AI', 'Space', 'ලංකා SL', 'Crypto', 'EV', 'Health', 'Climate', 'Viral']
 
-  // Chips
-  chips: { display:'flex',flexWrap:'wrap',gap:7,marginBottom:16 },
-  chip: (active) => ({
-    padding:'6px 13px',borderRadius:'var(--r3)',
-    border: active ? '1.5px solid var(--red)' : '1.5px solid var(--border2)',
-    background: active ? 'rgba(224,48,48,0.12)' : 'transparent',
-    color: active ? 'var(--red2)' : 'var(--text2)',
-    fontFamily:'Syne',fontSize:12,fontWeight:600,
-    cursor:'pointer',transition:'all 0.15s',
-  }),
+const DEFAULT_SCHEDULE = [
+  { id: 1, topic: 'Artificial Intelligence',  time: '08:00', active: true  },
+  { id: 2, topic: 'Space Technology',         time: '12:00', active: true  },
+  { id: 3, topic: 'Sri Lanka Tech News',      time: '18:00', active: false },
+  { id: 4, topic: 'Global Business',          time: '20:00', active: false },
+]
 
-  // Buttons
-  btn: (variant='red', sm=false) => ({
-    width: sm ? 'auto' : '100%',
-    padding: sm ? '6px 14px' : '14px',
-    borderRadius: sm ? 'var(--r3)' : 'var(--r2)',
-    border:'none',cursor:'pointer',
-    fontFamily:'Syne',fontSize: sm ? 11 : 14,fontWeight:700,
-    display:'flex',alignItems:'center',justifyContent:'center',gap:7,
-    transition:'opacity 0.15s,transform 0.1s',
-    ...(variant==='red'    && { background:'var(--red)',color:'#fff' }),
-    ...(variant==='green'  && { background:'var(--green)',color:'#fff' }),
-    ...(variant==='wa'     && { background:'#25d366',color:'#fff' }),
-    ...(variant==='outline'&& { background:'transparent',border:'1.5px solid var(--border2)',color:'var(--text2)' }),
-    ...(variant==='ghost'  && { background:'var(--surface2)',color:'var(--text2)',border:'1px solid var(--border)' }),
-  }),
+const TABS = [
+  { id: 'GENERATE', icon: '⚡', label: 'GENERATE' },
+  { id: 'ARTICLE',  icon: '📄', label: 'ARTICLE'  },
+  { id: 'SOCIAL',   icon: '📱', label: 'SOCIAL'   },
+  { id: 'AUTO',     icon: '🤖', label: 'AUTO'     },
+  { id: 'HISTORY',  icon: '🕐', label: 'HISTORY'  },
+]
 
-  // Cards / blocks
-  card: {
-    background:'var(--surface)',border:'1px solid var(--border)',
-    borderRadius:'var(--r2)',marginBottom:12,overflow:'hidden',
-  },
-  cardHead: {
-    display:'flex',alignItems:'center',justifyContent:'space-between',
-    padding:'10px 14px',borderBottom:'1px solid var(--border)',
-    background:'rgba(255,255,255,0.02)',
-  },
-  cardBody: { padding:14,fontSize:14,lineHeight:1.8,color:'var(--text2)' },
-
-  // Agent row
-  agentRow: (state) => ({
-    display:'flex',alignItems:'center',gap:10,
-    padding:'9px 0',borderBottom:'1px solid var(--border)',
-    opacity: state==='wait' ? 0.3 : 1,
-    transition:'opacity 0.3s',
-  }),
-  agentNum: (state) => ({
-    width:26,height:26,borderRadius:6,flexShrink:0,
-    display:'flex',alignItems:'center',justifyContent:'center',
-    fontSize:11,fontWeight:700,fontFamily:'JetBrains Mono',
-    background: state==='run' ? 'var(--red)' : state==='done' ? 'var(--green)' : 'var(--surface3)',
-    color: state==='wait' ? 'var(--text3)' : '#fff',
-    transition:'all 0.3s',
-  }),
-
-  // Progress bar
-  progBg: { height:3,background:'var(--surface3)',borderRadius:2,marginBottom:16,overflow:'hidden' },
-  progFill: (pct) => ({
-    height:'100%',background:'linear-gradient(90deg,var(--red),#ff6b35)',
-    borderRadius:2,width:`${pct}%`,transition:'width 0.4s ease',
-  }),
-
-  // Headline block
-  hlBlock: {
-    borderTop:'3px solid var(--red)',
-    paddingTop:16,paddingBottom:16,marginBottom:16,
-    borderBottom:'1px solid var(--border)',
-  },
-  hlLabel: {
-    fontSize:8,fontWeight:700,letterSpacing:'0.2em',
-    textTransform:'uppercase',color:'var(--text3)',marginBottom:8,
-  },
-  hlSi: {
-    fontFamily:'Noto Sans Sinhala,sans-serif',
-    fontSize:20,fontWeight:700,lineHeight:1.35,color:'var(--text)',
-  },
-  hlEn: {
-    fontSize:12,fontStyle:'italic',color:'var(--text3)',
-    marginTop:6,fontFamily:'Syne',lineHeight:1.4,
-  },
-  hlMeta: { display:'flex',alignItems:'center',gap:8,marginTop:10 },
-  pill: (type) => ({
-    padding:'3px 10px',borderRadius:'var(--r3)',
-    fontSize:10,fontWeight:700,
-    border: `1px solid ${type==='high'?'var(--green)':type==='mid'?'var(--gold)':'var(--text3)'}`,
-    color: type==='high'?'var(--green)':type==='mid'?'var(--gold)':'var(--text3)',
-  }),
-
-  // Score
-  scoreRow: { display:'flex',alignItems:'center',gap:14,padding:'12px 14px' },
-  scoreBig: { fontSize:44,fontWeight:800,lineHeight:1,color:'var(--green)',fontFamily:'Syne' },
-  scoreInfo: { flex:1 },
-  scoreLbl: { fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:6 },
-  sbarBg: { height:4,background:'var(--surface3)',borderRadius:2,overflow:'hidden' },
-  sbarFill: (pct) => ({
-    height:'100%',width:`${pct}%`,
-    background:'linear-gradient(90deg,var(--green),#4ade80)',
-    borderRadius:2,transition:'width 1s ease',
-  }),
-
-  // Platform cards
-  platCard: (type) => ({
-    borderRadius:'var(--r2)',overflow:'hidden',marginBottom:12,
-    border: type==='fb' ? '1px solid rgba(96,165,250,0.2)' : '1px solid rgba(74,222,128,0.2)',
-  }),
-  platHead: (type) => ({
-    display:'flex',alignItems:'center',justifyContent:'space-between',
-    padding:'10px 14px',
-    background: type==='fb' ? 'rgba(96,165,250,0.06)' : 'rgba(74,222,128,0.06)',
-  }),
-  platName: { fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',display:'flex',alignItems:'center',gap:6 },
-  platBody: {
-    padding:14,
-    fontFamily:'Noto Sans Sinhala,sans-serif',
-    fontSize:14,lineHeight:1.8,color:'var(--text2)',whiteSpace:'pre-wrap',
-  },
-
-  // Tags
-  tagsWrap: { display:'flex',flexWrap:'wrap',gap:6,padding:'12px 14px' },
-  tag: {
-    padding:'4px 10px',borderRadius:'var(--r3)',
-    border:'1px solid var(--border2)',fontSize:11,color:'var(--text2)',
-  },
-
-  // Push notif
-  pushCard: {
-    display:'flex',alignItems:'flex-start',gap:10,
-    padding:12,background:'var(--surface)',
-    border:'1px solid var(--border)',borderRadius:'var(--r2)',marginBottom:12,
-  },
-  pushIcon: {
-    width:36,height:36,borderRadius:8,
-    background:'linear-gradient(135deg,var(--red),#ff6b35)',
-    display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0,
-  },
-
-  // Bottom approve bar
-  approveBar: {
-    position:'fixed',bottom:0,left:0,right:0,zIndex:50,
-    background:'rgba(8,8,8,0.97)',
-    backdropFilter:'blur(20px)',
-    borderTop:'1px solid var(--border)',
-    padding:'12px 16px calc(12px + env(safe-area-inset-bottom))',
-  },
-  approveInner: { display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,maxWidth:480,margin:'0 auto' },
-
-  // Sheet overlay
-  overlay: {
-    position:'fixed',inset:0,zIndex:100,
-    background:'rgba(0,0,0,0.7)',backdropFilter:'blur(4px)',
-    display:'flex',alignItems:'flex-end',
-  },
-  sheet: {
-    width:'100%',maxWidth:520,margin:'0 auto',
-    background:'var(--surface)',
-    borderRadius:'20px 20px 0 0',
-    border:'1px solid var(--border)',borderBottom:'none',
-    padding:'20px 16px calc(20px + env(safe-area-inset-bottom))',
-    animation:'slideUp 0.25s ease',
-  },
-  sheetHandle: {
-    width:36,height:4,borderRadius:2,
-    background:'var(--surface3)',margin:'0 auto 18px',
-  },
-
-  // Success
-  successOv: {
-    position:'fixed',inset:0,zIndex:200,
-    background:'var(--bg)',
-    display:'flex',flexDirection:'column',
-    alignItems:'center',justifyContent:'center',
-    padding:'40px 24px',textAlign:'center',
-  },
-  successMark: {
-    width:80,height:80,borderRadius:'50%',
-    border:'2px solid var(--green)',
-    display:'flex',alignItems:'center',justifyContent:'center',
-    fontSize:34,marginBottom:20,
-    animation:'pop 0.4s cubic-bezier(0.34,1.56,0.64,1)',
-  },
-
-  // History
-  histItem: {
-    display:'flex',alignItems:'center',gap:12,
-    padding:'12px 0',borderBottom:'1px solid var(--border)',
-  },
-  histDot: (status) => ({
-    width:8,height:8,borderRadius:'50%',flexShrink:0,
-    background: status==='approved'?'var(--green)':status==='rejected'?'var(--red)':'var(--gold)',
-  }),
-
-  // Scheduler
-  schedCard: {
-    background:'var(--surface)',border:'1px solid var(--border)',
-    borderRadius:'var(--r2)',padding:16,marginBottom:12,
-  },
-  toggleRow: {
-    display:'flex',alignItems:'center',justifyContent:'space-between',
-    padding:'10px 0',borderBottom:'1px solid var(--border)',marginBottom:14,
-  },
-  errorBox: {
-    background:'rgba(224,48,48,0.08)',border:'1px solid rgba(224,48,48,0.25)',
-    borderRadius:'var(--r)',padding:12,fontSize:13,color:'#ff8080',marginBottom:12,
-  },
-
-  divider: {
-    textAlign:'center',color:'var(--text3)',
-    fontSize:14,letterSpacing:6,margin:'16px 0',
-  },
+// ── Theme ──────────────────────────────────────────────────────────────────
+const C = {
+  bg:      '#050508',
+  surface: '#0a0a10',
+  border:  'rgba(255,255,255,0.06)',
+  text:    '#e0e0f0',
+  muted:   '#44446a',
+  red:     '#e03030',
+  green:   '#22c55e',
+  blue:    '#4a9eff',
 }
 
-// ── Agents config ──────────────────────────────────────────────────────────
-const AGENTS = [
-  {id:1,name:'News Hunter',      icon:'🌍'},
-  {id:2,name:'Fact Checker',     icon:'✅'},
-  {id:3,name:'Trend Scorer',     icon:'📊'},
-  {id:4,name:'Eng Architect',    icon:'✍️'},
-  {id:5,name:'Sinhala Specialist',icon:'🗣️'},
-  {id:6,name:'Creative Writer',  icon:'🎨'},
-  {id:7,name:'SEO + Headlines',  icon:'🔍'},
-  {id:8,name:'Image Conceptor',  icon:'🖼️'},
-  {id:9,name:'Policy Guard',     icon:'⚖️'},
-  {id:10,name:'Social Handler',  icon:'📱'},
-  {id:11,name:'Grammar Pro',     icon:'📝'},
-  {id:12,name:'Dispatcher',      icon:'🚀'},
-]
+const S = {
+  app: {
+    fontFamily: "'Syne','Noto Sans Sinhala',sans-serif",
+    background: C.bg, minHeight: '100vh', color: C.text,
+    maxWidth: 480, margin: '0 auto',
+  },
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '14px 16px 10px',
+    borderBottom: `1px solid ${C.border}`,
+    position: 'sticky', top: 0, zIndex: 99,
+    background: 'rgba(5,5,8,0.96)', backdropFilter: 'blur(12px)',
+  },
+  tabs: {
+    display: 'flex', borderBottom: `1px solid ${C.border}`,
+    position: 'sticky', top: 57, zIndex: 98,
+    background: 'rgba(5,5,8,0.96)', backdropFilter: 'blur(12px)',
+    overflowX: 'auto', scrollbarWidth: 'none',
+  },
+  tab: a => ({
+    flex: 1, minWidth: 56, padding: '10px 4px 8px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+    cursor: 'pointer', border: 'none', background: 'transparent',
+    color: a ? C.red : C.muted,
+    borderBottom: `2px solid ${a ? C.red : 'transparent'}`,
+    fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+    fontFamily: 'inherit', transition: 'all 0.15s',
+  }),
+  body:  { padding: '16px 16px 100px' },
+  label: { fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.muted, marginBottom: 6, display: 'block' },
+  input: {
+    width: '100%', background: C.surface,
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 12, padding: '12px 14px',
+    color: C.text, fontSize: 14, outline: 'none',
+    fontFamily: 'inherit', boxSizing: 'border-box',
+  },
+  chip: a => ({
+    padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+    border: `1.5px solid ${a ? C.red : C.border}`,
+    background: a ? 'rgba(224,48,48,0.1)' : 'transparent',
+    color: a ? C.red : '#666688',
+    fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
+  }),
+  btn: (v='red', dis=false) => ({
+    width: '100%', padding: '14px', borderRadius: 12, border: 'none',
+    cursor: dis ? 'not-allowed' : 'pointer',
+    fontFamily: 'inherit', fontSize: 14, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    opacity: dis ? 0.45 : 1, transition: 'opacity 0.15s',
+    ...(v==='red'   && { background: C.red,   color: '#fff' }),
+    ...(v==='green' && { background: C.green, color: '#fff' }),
+    ...(v==='ghost' && { background: 'rgba(255,255,255,0.04)', color: '#8888a0', border: `1.5px solid ${C.border}` }),
+    ...(v==='blue'  && { background: 'rgba(74,158,255,0.12)', color: C.blue, border: `1.5px solid rgba(74,158,255,0.25)` }),
+  }),
+  card: {
+    background: C.surface, border: `1px solid ${C.border}`,
+    borderRadius: 14, overflow: 'hidden', marginBottom: 12,
+  },
+  cardHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '10px 14px', borderBottom: `1px solid rgba(255,255,255,0.04)`,
+    background: 'rgba(255,255,255,0.02)',
+  },
+  cardBody: { padding: '12px 14px' },
+  si: { fontFamily: "'Noto Sans Sinhala',sans-serif", fontSize: 14, lineHeight: 1.75, color: '#c8c8e0', whiteSpace: 'pre-wrap' },
+  tag: { display: 'inline-block', padding: '3px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.05)', color: '#666688', fontSize: 10, fontWeight: 600, marginRight: 5, marginBottom: 5 },
+  err: { background: 'rgba(224,48,48,0.08)', border: `1px solid rgba(224,48,48,0.2)`, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#ff7070', marginBottom: 12 },
+}
 
-const TOPICS = [
-  {label:'🤖 AI',    val:'AI Technology'},
-  {label:'🚀 Space', val:'Space Science'},
-  {label:'🇱🇰 SL',   val:'Sri Lanka Tech'},
-  {label:'₿ Crypto', val:'Crypto Bitcoin'},
-  {label:'⚡ EV',    val:'Electric Vehicles'},
-  {label:'🏥 Health',val:'Health Science'},
-  {label:'🌍 Climate',val:'Climate Change'},
-  {label:'🔥 Viral', val:'Trending Viral'},
-]
+// ── Helpers ────────────────────────────────────────────────────────────────
+function CopyBtn({ text }) {
+  const [ok, set] = useState(false)
+  return (
+    <button onClick={() => { navigator.clipboard?.writeText(text); set(true); setTimeout(()=>set(false),1500) }}
+      style={{ fontSize: 10, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.06)', border: 'none', color: ok?C.green:'#666688', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+      {ok ? '✓ Copied' : '⎘ Copy'}
+    </button>
+  )
+}
+
+function Card({ label, extra, children }) {
+  return (
+    <div style={S.card}>
+      <div style={S.cardHead}>
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: C.muted }}>{label}</span>
+        {extra}
+      </div>
+      <div style={S.cardBody}>{children}</div>
+    </div>
+  )
+}
+
+function Toggle({ on, onChange }) {
+  return (
+    <div onClick={() => onChange(!on)} style={{ width: 40, height: 22, borderRadius: 11, background: on ? C.green : '#222230', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
+      <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: on ? 21 : 3, transition: 'left 0.2s' }} />
+    </div>
+  )
+}
 
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab]           = useState('generate')
-  const [topic, setTopic]       = useState('')
-  const [output, setOutput]     = useState(null)
-  const [agents, setAgents]     = useState({})
-  const [progress, setProgress] = useState(0)
-  const [running, setRunning]   = useState(false)
-  const [error, setError]       = useState('')
-  const [waOpen, setWaOpen]     = useState(false)
-  const [waNum, setWaNum]       = useState('')
-  const [success, setSuccess]   = useState('')
-  const [history, setHistory]   = useState([])
-  const [histLoad, setHistLoad] = useState(false)
-  const [schedOn, setSchedOn]   = useState(false)
-  const [schedH, setSchedH]     = useState(6)
-  const [schedTopic, setSchedTopic] = useState('trending technology news')
-  const [schedMsg, setSchedMsg] = useState('')
-  const schedRef = useRef(null)
+  const [tab,       setTab]       = useState('GENERATE')
+  const [topic,     setTopic]     = useState('')
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState('')
+  const [result,    setResult]    = useState(null)
+  const [agents,    setAgents]    = useState({})
+  const [history,   setHistory]   = useState([])
+  const [schedule,  setSchedule]  = useState(DEFAULT_SCHEDULE)
+  const [autoOn,    setAutoOn]    = useState(false)
+  const [autoLog,   setAutoLog]   = useState([])
+  const [autoRunning, setAutoRunning] = useState(false)
+  const timerRef = useRef(null)
 
-  // Tab change
-  function goTab(t) {
-    setTab(t)
-    if (t === 'history') loadHistory()
-  }
+  useEffect(() => {
+    const saved = localStorage.getItem('sb_schedule')
+    if (saved) setSchedule(JSON.parse(saved))
+    const savedAuto = localStorage.getItem('sb_auto')
+    if (savedAuto) setAutoOn(JSON.parse(savedAuto))
+    supabase?.from('articles').select('*').order('created_at',{ascending:false}).limit(20)
+      .then(({data}) => data && setHistory(data))
+  }, [])
 
-  // Generate
-  async function generate() {
-    if (running) return
-    setRunning(true)
-    setError('')
-    setAgents({})
-    setProgress(0)
-    setOutput(null)
+  useEffect(() => {
+    localStorage.setItem('sb_schedule', JSON.stringify(schedule))
+  }, [schedule])
 
-    const t = topic.trim() || 'trending technology news'
+  useEffect(() => {
+    localStorage.setItem('sb_auto', JSON.stringify(autoOn))
+  }, [autoOn])
 
+  // ── Auto scheduler tick every 60s ─────────────────────────────────────
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (!autoOn) return
+    timerRef.current = setInterval(async () => {
+      const now   = new Date()
+      const hhmm  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+      const due   = schedule.find(s => s.active && s.time === hhmm)
+      if (!due || autoRunning) return
+      setAutoRunning(true)
+      setAutoLog(l => [`🕐 ${hhmm} — Starting: ${due.topic}`, ...l.slice(0,19)])
+      try {
+        const payload = await runPipeline(due.topic, 'trending', (id, state, msg) => {
+          if (state === 'done') setAutoLog(l => [`  ✓ Agent ${id}: ${msg}`, ...l.slice(0,19)])
+        })
+        if (supabase) {
+          await supabase.from('articles').insert([{ ...payload, topic: due.topic }])
+        }
+        setHistory(h => [{ ...payload, topic: due.topic, created_at: new Date().toISOString() }, ...h.slice(0,19)])
+        setAutoLog(l => [`✅ Done: "${payload.headline_si}"`, ...l.slice(0,19)])
+      } catch(e) {
+        setAutoLog(l => [`❌ Error: ${e.message.slice(0,60)}`, ...l.slice(0,19)])
+      } finally {
+        setAutoRunning(false)
+      }
+    }, 60000)
+    return () => clearInterval(timerRef.current)
+  }, [autoOn, schedule, autoRunning])
+
+  const onAgent = useCallback((id, state, msg) => {
+    setAgents(prev => ({ ...prev, [id]: { state, msg } }))
+  }, [])
+
+  async function generate(topicOverride) {
+    const t = (topicOverride || topic).trim()
+    if (!t) return
+    setError(''); setResult(null); setAgents({}); setLoading(true)
     try {
-      const result = await runPipeline(t, 'trending', (id, state, msg) => {
-        setAgents(prev => ({...prev, [id]: {state, msg}}))
-        setProgress(Math.round(id/12*100))
-      })
-
-      // Save to Supabase
-      const {data, error: dbErr} = await supabase
-        .from('news_posts')
-        .insert([result])
-        .select()
-      if (!dbErr && data?.[0]) result.id = data[0].id
-
-      setOutput(result)
-      goTab('article')
+      const payload = await runPipeline(t, 'trending', onAgent)
+      setResult(payload)
+      if (supabase) {
+        const { error: e } = await supabase.from('articles').insert([{ ...payload, topic: t }])
+        if (!e) setHistory(h => [{ ...payload, topic: t, created_at: new Date().toISOString() }, ...h.slice(0,19)])
+      }
+      setTab('ARTICLE')
     } catch(e) {
       setError(e.message)
     } finally {
-      setRunning(false)
+      setLoading(false)
     }
   }
 
-  // Approve
-  async function approve() {
-    if (!output?.id) return
-    await supabase.from('news_posts').update({status:'approved'}).eq('id', output.id)
-    setSuccess('Article approved and saved! ✓')
+  // ── TAB: GENERATE ──────────────────────────────────────────────────────
+  function TabGenerate() {
+    return (
+      <div>
+        <div style={{ marginBottom: 20 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 4px', letterSpacing: '-0.02em' }}>News Desk</h2>
+          <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>4 AI agents · Real news · Auto image · Sinhala</p>
+        </div>
+
+        <label style={S.label}>TOPIC</label>
+        <input style={S.input} placeholder="Type your topic..." value={topic}
+          onChange={e => setTopic(e.target.value)}
+          onKeyDown={e => e.key==='Enter' && !loading && generate()} />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 16 }}>
+          {QUICK_TOPICS.map(t => (
+            <button key={t} style={S.chip(topic===t)} onClick={() => setTopic(t)}>{t}</button>
+          ))}
+        </div>
+
+        {/* Agent grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+          {AGENTS.map(a => {
+            const ag = agents[a.id] || {}
+            const isRun  = ag.state === 'run'
+            const isDone = ag.state === 'done'
+            return (
+              <div key={a.id} style={{
+                background: isDone ? 'rgba(34,197,94,0.06)' : isRun ? 'rgba(224,48,48,0.08)' : C.surface,
+                border: `1px solid ${isDone ? 'rgba(34,197,94,0.2)' : isRun ? 'rgba(224,48,48,0.25)' : C.border}`,
+                borderRadius: 12, padding: '10px 12px', transition: 'all 0.2s',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontSize: 16 }}>{a.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#c0c0d8' }}>{a.name}</span>
+                </div>
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 4 }}>{a.desc}</div>
+                <div style={{ fontSize: 9, fontWeight: 600, color: isDone ? C.green : isRun ? C.red : '#333355', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  {isRun && <span style={{ animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>◌</span>}
+                  {isDone && '✓ '}{ag.msg || 'Waiting...'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {error && <div style={S.err}>⚠️ {error}</div>}
+        <button style={S.btn('red', loading || !topic.trim())} onClick={() => generate()} disabled={loading || !topic.trim()}>
+          {loading ? '⏳ Generating...' : '⚡ Generate Article'}
+        </button>
+      </div>
+    )
   }
 
-  // Reject
-  async function reject() {
-    if (!confirm('Reject this article?')) return
-    if (output?.id) await supabase.from('news_posts').update({status:'rejected'}).eq('id', output.id)
-    setOutput(null)
-    goTab('generate')
+  // ── TAB: ARTICLE ───────────────────────────────────────────────────────
+  function TabArticle() {
+    if (!result) return <div style={{ textAlign:'center', padding:40, color:'#333355' }}>Generate an article first ⚡</div>
+    return (
+      <div>
+        <Card label="📰 Sinhala Headline" extra={<CopyBtn text={result.headline_si} />}>
+          <div style={{ fontFamily:"'Noto Sans Sinhala',sans-serif", fontSize:16, fontWeight:700, lineHeight:1.5 }}>
+            {result.headline_si}
+          </div>
+        </Card>
+
+        <Card label="🌐 Source & English Headline">
+          <div style={{ fontSize:14, fontWeight:600, color:'#c0c0d8', marginBottom:10 }}>{result.headline_en}</div>
+          {result.source_url ? (
+            <a href={result.source_url} target="_blank" rel="noopener noreferrer"
+              style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, fontWeight:700, color:C.blue, background:'rgba(74,158,255,0.08)', border:'1px solid rgba(74,158,255,0.2)', borderRadius:20, padding:'5px 14px', textDecoration:'none' }}>
+              🔗 {result.source_name} — Original Article ↗
+            </a>
+          ) : (
+            <span style={{ fontSize:11, color:'#444466' }}>📰 {result.source_name || 'Source unavailable'}</span>
+          )}
+        </Card>
+
+        <Card label="📝 Sinhala Article" extra={<CopyBtn text={result.article_si} />}>
+          <div style={S.si}>{result.article_si}</div>
+        </Card>
+
+        {/* Auto image — loads automatically */}
+        <Card label="🖼️ AI Image — Auto Generated">
+          <AutoImage prompt={result.image_prompt} headline={result.headline_si} imageUrl={result.image_url} />
+        </Card>
+
+        <Card label="📊 Stats">
+          <div style={{ fontSize:11, color:'#666688', marginBottom:4 }}>Virality: {result.virality}/10</div>
+          <div style={{ height:4, borderRadius:4, background:`linear-gradient(90deg,${C.red} ${result.virality*10}%,rgba(255,255,255,0.05) ${result.virality*10}%)`, marginBottom:10 }} />
+          <div>{result.tags?.map(t => <span key={t} style={S.tag}>#{t}</span>)}</div>
+        </Card>
+      </div>
+    )
   }
 
-  // WhatsApp
-  function sendWa() {
-    const msg = output?.whatsapp || output?.headline_si || ''
-    const enc = encodeURIComponent(msg)
-    const clean = waNum.replace('+','').replace(/\s/g,'')
-    window.open(clean ? `https://wa.me/${clean}?text=${enc}` : `https://wa.me/?text=${enc}`, '_blank')
-    if (output?.id) supabase.from('news_posts').update({status:'approved'}).eq('id', output.id)
-    setWaOpen(false)
-    setSuccess(`"${(output?.headline_si||'').slice(0,35)}..." sent to WhatsApp! ✓`)
+  // ── TAB: SOCIAL ────────────────────────────────────────────────────────
+  function TabSocial() {
+    if (!result) return <div style={{ textAlign:'center', padding:40, color:'#333355' }}>Generate an article first ⚡</div>
+    return (
+      <div>
+        <Card label="📘 Facebook" extra={<CopyBtn text={result.facebook} />}>
+          <div style={S.si}>{result.facebook}</div>
+        </Card>
+        <Card label="💚 WhatsApp" extra={<CopyBtn text={result.whatsapp} />}>
+          <div style={S.si}>{result.whatsapp}</div>
+        </Card>
+        <Card label="🔔 Push Notification" extra={<CopyBtn text={result.push} />}>
+          <div style={{ fontFamily:"'Noto Sans Sinhala',sans-serif", fontSize:13, color:'#c8c8e0' }}>{result.push}</div>
+        </Card>
+        <Card label="🔍 Meta Description" extra={<CopyBtn text={result.meta_desc} />}>
+          <div style={{ fontSize:12, color:'#888890' }}>{result.meta_desc}</div>
+        </Card>
+      </div>
+    )
   }
 
-  // Copy
-  function copy(text, btn) {
-    navigator.clipboard?.writeText(text)
-    if (btn) { btn.textContent = 'Copied!'; setTimeout(()=> btn.textContent='Copy', 1500) }
-  }
+  // ── TAB: AUTO ──────────────────────────────────────────────────────────
+  function TabAuto() {
+    const [newTopic, setNewTopic] = useState('')
+    const [newTime,  setNewTime]  = useState('09:00')
 
-  // History
-  async function loadHistory(status) {
-    setHistLoad(true)
-    let q = supabase.from('news_posts').select('id,headline_si,headline_en,virality,status,created_at').order('created_at',{ascending:false}).limit(25)
-    if (status) q = q.eq('status', status)
-    const {data} = await q
-    setHistory(data || [])
-    setHistLoad(false)
-  }
-
-  // Scheduler
-  function toggleSched() {
-    const next = !schedOn
-    setSchedOn(next)
-    if (next) {
-      schedRef.current = setInterval(async () => {
-        try {
-          const res = await runPipeline(schedTopic, 'trending', () => {})
-          await supabase.from('news_posts').insert([res])
-          console.log('Auto article saved:', res.headline_si?.slice(0,40))
-        } catch(e) { console.error('Auto error:', e) }
-      }, schedH * 3600 * 1000)
-      setSchedMsg(`✓ Auto ON — every ${schedH}h, topic: "${schedTopic}"`)
-    } else {
-      clearInterval(schedRef.current)
-      setSchedMsg('Scheduler stopped.')
+    function addSlot() {
+      if (!newTopic.trim()) return
+      setSchedule(s => [...s, { id: Date.now(), topic: newTopic.trim(), time: newTime, active: true }])
+      setNewTopic('')
     }
+
+    function removeSlot(id) {
+      setSchedule(s => s.filter(x => x.id !== id))
+    }
+
+    function toggleSlot(id) {
+      setSchedule(s => s.map(x => x.id === id ? { ...x, active: !x.active } : x))
+    }
+
+    return (
+      <div>
+        {/* Auto mode master toggle */}
+        <div style={{ ...S.card, marginBottom: 12 }}>
+          <div style={{ ...S.cardBody, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, marginBottom:3 }}>🤖 Auto Mode</div>
+              <div style={{ fontSize:11, color: autoOn ? C.green : C.muted }}>
+                {autoOn ? (autoRunning ? '⏳ Running now...' : '✅ Active — checks every minute') : 'Off — turn on to schedule'}
+              </div>
+            </div>
+            <Toggle on={autoOn} onChange={setAutoOn} />
+          </div>
+        </div>
+
+        {/* Schedule list */}
+        <label style={S.label}>SCHEDULE</label>
+        {schedule.map(s => (
+          <div key={s.id} style={{ ...S.card, marginBottom: 8 }}>
+            <div style={{ ...S.cardBody, display:'flex', alignItems:'center', gap: 10 }}>
+              <div style={{ fontSize:14, fontWeight:700, color: C.blue, minWidth:40 }}>{s.time}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:'#c0c0d8' }}>{s.topic}</div>
+                <div style={{ fontSize:10, color: s.active ? C.green : C.muted }}>{s.active ? 'Active' : 'Paused'}</div>
+              </div>
+              <Toggle on={s.active} onChange={() => toggleSlot(s.id)} />
+              <button onClick={() => runPipeline && generate(s.topic)}
+                style={{ fontSize:10, padding:'4px 10px', borderRadius:20, background:'rgba(224,48,48,0.1)', border:`1px solid rgba(224,48,48,0.2)`, color:C.red, cursor:'pointer', fontFamily:'inherit', fontWeight:700 }}>
+                ▶ Run
+              </button>
+              <button onClick={() => removeSlot(s.id)}
+                style={{ fontSize:12, padding:'4px 8px', borderRadius:20, background:'transparent', border:'none', color:'#444466', cursor:'pointer' }}>
+                ✕
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* Add new slot */}
+        <div style={{ ...S.card, marginTop: 12 }}>
+          <div style={{ ...S.cardHead }}>
+            <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.14em', textTransform:'uppercase', color:C.muted }}>ADD SCHEDULE</span>
+          </div>
+          <div style={{ ...S.cardBody, display:'flex', flexDirection:'column', gap:8 }}>
+            <input style={S.input} placeholder="Topic (e.g. AI News)" value={newTopic} onChange={e => setNewTopic(e.target.value)} />
+            <input style={{ ...S.input, width:'auto' }} type="time" value={newTime} onChange={e => setNewTime(e.target.value)} />
+            <button style={S.btn('blue', !newTopic.trim())} onClick={addSlot} disabled={!newTopic.trim()}>
+              + Add to Schedule
+            </button>
+          </div>
+        </div>
+
+        {/* Auto log */}
+        {autoLog.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <label style={S.label}>AUTO LOG</label>
+            <div style={{ background: '#080810', borderRadius: 10, padding: '10px 14px', border: `1px solid ${C.border}` }}>
+              {autoLog.map((l, i) => (
+                <div key={i} style={{ fontSize: 11, color: l.startsWith('✅') ? C.green : l.startsWith('❌') ? '#ff6060' : '#666688', padding: '2px 0', fontFamily: 'monospace' }}>
+                  {l}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  const agSt = (id) => agents[id]?.state || 'wait'
-  const agMsg = (id) => agents[id]?.msg   || 'Waiting...'
+  // ── TAB: HISTORY ───────────────────────────────────────────────────────
+  function TabHistory() {
+    if (!history.length) return <div style={{ textAlign:'center', padding:40, color:'#333355' }}>No history yet</div>
+    return (
+      <div>
+        {history.map((h, i) => (
+          <div key={i} style={{ ...S.card, cursor:'pointer' }} onClick={() => { setResult(h); setTab('ARTICLE') }}>
+            <div style={S.cardBody}>
+              <div style={{ fontFamily:"'Noto Sans Sinhala',sans-serif", fontSize:13, fontWeight:600, color:'#c0c0d8', marginBottom:4 }}>
+                {h.headline_si}
+              </div>
+              <div style={{ fontSize:10, color:'#333355', display:'flex', gap:8, alignItems:'center' }}>
+                <span>{h.topic}</span>
+                <span>🔥 {h.virality}/10</span>
+                {h.source_name && <span>📰 {h.source_name}</span>}
+                <span>{new Date(h.created_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const TABMAP = { GENERATE: TabGenerate, ARTICLE: TabArticle, SOCIAL: TabSocial, AUTO: TabAuto, HISTORY: TabHistory }
+  const Active = TABMAP[tab]
 
   return (
     <div style={S.app}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{background:#050508}
+        input:focus{border-color:rgba(224,48,48,0.4)!important;outline:none}
+        input[type=time]{color-scheme:dark}
+        ::-webkit-scrollbar{display:none}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
 
-      {/* TOP BAR */}
-      <div style={S.topbar}>
-        <div style={S.brandRow}>
-          <div style={S.brandMark}>SB</div>
+      {/* Header */}
+      <div style={S.header}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:C.red, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:900 }}>SB</div>
           <div>
-            <div style={S.brandName}>SmartBiz</div>
-            <div style={S.brandSub}>News Desk · AI</div>
+            <div style={{ fontSize:16, fontWeight:800, letterSpacing:'-0.02em' }}>SmartBiz</div>
+            <div style={{ fontSize:9, color:C.muted, letterSpacing:'0.12em', textTransform:'uppercase' }}>News Desk · AI</div>
           </div>
         </div>
-        <div style={S.liveBadge}>
-          <div style={S.liveDot}></div>
-          {running ? 'Processing' : 'Live'}
+        <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:10, fontWeight:700, color: autoOn ? C.green : C.muted }}>
+          <span style={{ width:6, height:6, borderRadius:'50%', background: autoOn ? C.green : C.muted, display:'inline-block', animation: autoOn ? 'spin 2s linear infinite' : 'none' }} />
+          {autoOn ? 'AUTO ON' : 'LIVE'}
         </div>
       </div>
 
-      {/* NAV TABS */}
+      {/* Tabs */}
       <div style={S.tabs}>
-        {[
-          {id:'generate',icon:'⚡',label:'Generate'},
-          {id:'article', icon:'📰',label:'Article'},
-          {id:'social',  icon:'📱',label:'Social'},
-          {id:'scheduler',icon:'🤖',label:'Auto'},
-          {id:'history', icon:'📋',label:'History'},
-        ].map(t => (
-          <button key={t.id} style={S.tab(tab===t.id)} onClick={()=>goTab(t.id)}>
-            <span style={S.tabIcon}>{t.icon}</span>
+        {TABS.map(t => (
+          <button key={t.id} style={S.tab(tab===t.id)} onClick={() => setTab(t.id)}>
+            <span style={{ fontSize:16 }}>{t.icon}</span>
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* MAIN */}
-      <div style={S.main}>
-
-        {/* ── GENERATE ── */}
-        {tab==='generate' && (
-          <div style={S.screen}>
-            <div style={S.pageTitle}>News Desk</div>
-            <div style={S.pageSub}>Pick a topic — 12 AI agents write your article</div>
-
-            <span style={S.label}>Topic</span>
-            <input
-              style={S.input}
-              value={topic}
-              onChange={e=>setTopic(e.target.value)}
-              placeholder="Type your topic..."
-              onFocus={e=>e.target.style.borderColor='var(--red)'}
-              onBlur={e=>e.target.style.borderColor='var(--border)'}
-            />
-
-            <span style={S.label}>Quick Topics</span>
-            <div style={S.chips}>
-              {TOPICS.map(t=>(
-                <button key={t.val} style={S.chip(topic===t.val)} onClick={()=>setTopic(t.val)}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {error && <div style={S.errorBox}>⚠️ {error}</div>}
-
-            {/* Agent Progress */}
-            {running && (
-              <div style={{background:'var(--surface)',borderRadius:'var(--r2)',padding:14,marginBottom:14}}>
-                <div style={S.progBg}><div style={S.progFill(progress)}></div></div>
-                {AGENTS.map(a => (
-                  <div key={a.id} style={S.agentRow(agSt(a.id))}>
-                    <div style={S.agentNum(agSt(a.id))}>{a.id}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:12,fontWeight:600}}>{a.name}</div>
-                      <div style={{fontSize:10,color: agSt(a.id)==='run'?'var(--red)':agSt(a.id)==='done'?'var(--green)':'var(--text3)',marginTop:1}}>
-                        {agMsg(a.id)}
-                      </div>
-                    </div>
-                    {agSt(a.id)==='run' && (
-                      <div style={{width:12,height:12,border:'2px solid rgba(224,48,48,0.2)',borderTopColor:'var(--red)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}></div>
-                    )}
-                    {agSt(a.id)==='done' && <span style={{fontSize:12}}>✓</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div style={S.divider}>· · ·</div>
-            <button style={{...S.btn('red'),opacity:running?0.5:1}} onClick={generate} disabled={running}>
-              {running
-                ? <><div style={{width:16,height:16,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}></div> Generating...</>
-                : '⚡ Generate Article'
-              }
-            </button>
-          </div>
-        )}
-
-        {/* ── ARTICLE ── */}
-        {tab==='article' && (
-          <div style={S.screen}>
-            {!output ? (
-              <div style={{textAlign:'center',color:'var(--text3)',padding:'40px 0',fontSize:14}}>
-                No article yet — Generate one first ⚡
-              </div>
-            ) : (
-              <>
-                <div style={S.hlBlock}>
-                  <div style={S.hlLabel}>SmartBiz · Sinhala Edition</div>
-                  <div style={{...S.hlSi, fontFamily:'Noto Sans Sinhala,sans-serif'}}>{output.headline_si}</div>
-                  <div style={S.hlEn}>{output.headline_en}</div>
-                  <div style={S.hlMeta}>
-                    <span style={{fontSize:10,color:'var(--text3)'}}>Virality: {output.virality}/10</span>
-                    <span style={S.pill(output.virality>=8?'high':output.virality>=6?'mid':'low')}>
-                      {output.virality>=8?'🔥 Hot':output.virality>=6?'📈 Trending':'📊 Moderate'}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={S.card}>
-                  <div style={S.cardHead}>
-                    <span style={S.label}>Sinhala Article</span>
-                    <button style={S.btn('outline',true)} onClick={e=>copy(output.article_si,e.target)}>Copy</button>
-                  </div>
-                  <div style={{...S.cardBody,fontFamily:'Noto Sans Sinhala,sans-serif',fontSize:15}}>{output.article_si}</div>
-                </div>
-
-                <div style={S.card}>
-                  <div style={S.cardHead}>
-                    <span style={S.label}>English Article</span>
-                    <button style={S.btn('outline',true)} onClick={e=>copy(output.article_en,e.target)}>Copy</button>
-                  </div>
-                  <div style={S.cardBody}>{output.article_en}</div>
-                </div>
-
-                <ImageGenerator prompt={output.image_prompt} headline={output.headline_en || output.headline_si} />
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── SOCIAL ── */}
-        {tab==='social' && (
-          <div style={S.screen}>
-            {!output ? (
-              <div style={{textAlign:'center',color:'var(--text3)',padding:'40px 0',fontSize:14}}>No article yet</div>
-            ) : (
-              <>
-                <div style={S.card}>
-                  <div style={S.scoreRow}>
-                    <div style={S.scoreBig}>{output.virality}</div>
-                    <div style={S.scoreInfo}>
-                      <div style={S.scoreLbl}>Virality Score / 10</div>
-                      <div style={S.sbarBg}><div style={S.sbarFill(output.virality*10)}></div></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Facebook */}
-                <div style={S.platCard('fb')}>
-                  <div style={S.platHead('fb')}>
-                    <div style={S.platName}><span>📘</span> Facebook</div>
-                    <button style={S.btn('outline',true)} onClick={e=>copy(output.facebook,e.target)}>Copy</button>
-                  </div>
-                  <div style={S.platBody}>{output.facebook}</div>
-                </div>
-
-                {/* WhatsApp */}
-                <div style={S.platCard('wa')}>
-                  <div style={S.platHead('wa')}>
-                    <div style={S.platName}><span>💬</span> WhatsApp</div>
-                    <button style={S.btn('outline',true)} onClick={e=>copy(output.whatsapp,e.target)}>Copy</button>
-                  </div>
-                  <div style={S.platBody}>{output.whatsapp}</div>
-                </div>
-
-                {/* Push */}
-                <div style={S.pushCard}>
-                  <div style={S.pushIcon}>📰</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Push Notification</div>
-                    <div style={{fontSize:13,color:'var(--text2)',lineHeight:1.5,fontFamily:'Noto Sans Sinhala,sans-serif'}}>{output.push}</div>
-                  </div>
-                  <button style={S.btn('outline',true)} onClick={e=>copy(output.push,e.target)}>Copy</button>
-                </div>
-
-                {/* Tags */}
-                <div style={S.card}>
-                  <div style={S.cardHead}><span style={S.label}>Tags</span></div>
-                  <div style={S.tagsWrap}>
-                    {(output.tags||[]).map((t,i)=><span key={i} style={S.tag}>#{t}</span>)}
-                  </div>
-                  <div style={{...S.cardBody,borderTop:'1px solid var(--border)',paddingTop:10,fontStyle:'italic',fontSize:13,color:'var(--text3)'}}>
-                    {output.meta_desc}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── SCHEDULER ── */}
-        {tab==='scheduler' && (
-          <div style={S.screen}>
-            <div style={S.pageTitle}>Auto Generate</div>
-            <div style={S.pageSub}>Enable and walk away — articles auto-generate and save to Supabase</div>
-
-            <div style={S.schedCard}>
-              <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>🤖 Auto Article Generator</div>
-              <div style={{fontSize:12,color:'var(--text3)',marginBottom:14,lineHeight:1.6}}>
-                Runs in the browser — keep this tab open for auto generation.
-              </div>
-
-              <div style={S.toggleRow}>
-                <span style={{fontSize:14,fontWeight:600}}>Auto Generate</span>
-                <button
-                  onClick={toggleSched}
-                  style={{
-                    width:44,height:24,borderRadius:12,border:'none',cursor:'pointer',
-                    background: schedOn ? 'var(--green)' : 'var(--surface3)',
-                    position:'relative',transition:'background 0.2s',flexShrink:0,
-                  }}
-                >
-                  <div style={{
-                    position:'absolute',width:18,height:18,background:'#fff',
-                    borderRadius:'50%',top:3,
-                    left: schedOn ? 23 : 3,
-                    transition:'left 0.2s',
-                    boxShadow:'0 1px 3px rgba(0,0,0,0.3)',
-                  }}></div>
-                </button>
-              </div>
-
-              <span style={{...S.label,marginTop:14}}>Topic</span>
-              <input
-                style={S.input}
-                value={schedTopic}
-                onChange={e=>setSchedTopic(e.target.value)}
-                placeholder="Auto generate topic..."
-              />
-
-              <span style={S.label}>Interval</span>
-              <div style={S.chips}>
-                {[2,4,6,12,24].map(h=>(
-                  <button key={h} style={S.chip(schedH===h)} onClick={()=>setSchedH(h)}>{h}h</button>
-                ))}
-              </div>
-
-              {schedMsg && (
-                <div style={{
-                  background: schedOn ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${schedOn?'rgba(34,197,94,0.2)':'var(--border)'}`,
-                  borderRadius:'var(--r)',padding:10,fontSize:12,
-                  color: schedOn ? 'var(--green)' : 'var(--text3)',marginTop:10,
-                }}>
-                  {schedMsg}
-                </div>
-              )}
-            </div>
-
-            <div style={S.schedCard}>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>📊 Status</div>
-              <div style={{fontSize:13,color:'var(--text2)',lineHeight:2.2}}>
-                <div>Auto Generate: <b style={{color:schedOn?'var(--green)':'var(--text3)'}}>{schedOn?'🟢 ON':'🔴 OFF'}</b></div>
-                <div>Interval: <b>{schedH} hours</b></div>
-                <div>Topic: <b>{schedTopic}</b></div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── HISTORY ── */}
-        {tab==='history' && (
-          <div style={S.screen}>
-            <div style={S.pageTitle}>Article History</div>
-            <div style={S.pageSub}>All articles saved in Supabase</div>
-
-            <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
-              <button style={S.btn('ghost',true)} onClick={()=>loadHistory()}>↻ All</button>
-              <button style={S.btn('ghost',true)} onClick={()=>loadHistory('pending')}>Pending</button>
-              <button style={S.btn('ghost',true)} onClick={()=>loadHistory('approved')}>Approved</button>
-              <button style={S.btn('ghost',true)} onClick={()=>loadHistory('rejected')}>Rejected</button>
-            </div>
-
-            {histLoad ? (
-              <div style={{textAlign:'center',color:'var(--text3)',padding:'30px 0'}}>Loading...</div>
-            ) : history.length === 0 ? (
-              <div style={{textAlign:'center',color:'var(--text3)',padding:'30px 0',fontSize:13}}>No articles found</div>
-            ) : (
-              history.map(a=>(
-                <div key={a.id} style={S.histItem}>
-                  <div style={S.histDot(a.status)}></div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontFamily:'Noto Sans Sinhala,sans-serif',fontSize:13,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                      {a.headline_si||a.headline_en||'No title'}
-                    </div>
-                    <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>
-                      {a.status} · {new Date(a.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                  <div style={{fontSize:12,fontWeight:700,color:'var(--green)',flexShrink:0}}>{a.virality}/10</div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-      </div>{/* /main */}
-
-      {/* ── APPROVE BAR ── */}
-      {output && (tab==='article'||tab==='social') && (
-        <div style={S.approveBar}>
-          <div style={S.approveInner}>
-            <button style={{...S.btn('outline'),padding:11,fontSize:12}} onClick={reject}>✕ Reject</button>
-            <button style={{...S.btn('wa'),    padding:11,fontSize:12}} onClick={()=>setWaOpen(true)}>💬 WhatsApp</button>
-            <button style={{...S.btn('green'), padding:11,fontSize:12}} onClick={approve}>✓ Approve</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── WA SHEET ── */}
-      {waOpen && (
-        <div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)setWaOpen(false)}}>
-          <div style={S.sheet}>
-            <div style={S.sheetHandle}></div>
-            <div style={{fontWeight:800,fontSize:20,marginBottom:5}}>Send to WhatsApp</div>
-            <div style={{fontSize:13,color:'var(--text3)',marginBottom:16,lineHeight:1.5}}>
-              Enter number — WhatsApp opens with message pre-filled.
-            </div>
-            <input
-              type="tel"
-              style={{...S.input,marginBottom:10}}
-              value={waNum}
-              onChange={e=>setWaNum(e.target.value)}
-              placeholder="+94 77 123 4567"
-            />
-            <button style={S.btn('wa')} onClick={sendWa}>💬 Open WhatsApp</button>
-            <button style={{...S.btn('ghost'),marginTop:8}} onClick={()=>setWaOpen(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── SUCCESS ── */}
-      {success && (
-        <div style={S.successOv}>
-          <div style={S.successMark}>✓</div>
-          <div style={{fontWeight:800,fontSize:24,marginBottom:8}}>Done!</div>
-          <div style={{fontSize:14,color:'var(--text3)',lineHeight:1.6,marginBottom:24}}>{success}</div>
-          <button style={{...S.btn('outline'),width:'auto',padding:'12px 32px'}} onClick={()=>{setSuccess('');setOutput(null);goTab('generate')}}>
-            + New Article
-          </button>
-        </div>
-      )}
-
+      {/* Body */}
+      <div style={S.body}><Active /></div>
     </div>
   )
 }
+
+// ── Auto Image Component ───────────────────────────────────────────────────
+function AutoImage({ prompt, headline, imageUrl }) {
+  const [status, setStatus] = useState('loading')
+  const [src,    setSrc]    = useState(imageUrl)
+  const [wm,     setWm]     = useState(null)
+
+  useEffect(() => {
+    if (!prompt) return
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      setSrc(imageUrl)
+      // Add watermark
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width; canvas.height = img.height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0)
+      const fSize = Math.max(14, img.width * 0.022)
+      const text  = '⚡ SmartBiz'
+      ctx.font    = `700 ${fSize}px Syne, sans-serif`
+      const tw = ctx.measureText(text).width
+      const bw = tw + 24, bh = fSize + 16
+      const bx = 16, by = img.height - bh - 16
+      ctx.fillStyle = 'rgba(224,48,48,0.92)'
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh/2); ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.fillText(text, bx + 12, by + bh - 8)
+      setWm(canvas.toDataURL('image/jpeg', 0.92))
+      setStatus('done')
+    }
+    img.onerror = () => setStatus('error')
+    img.src = imageUrl
+  }, [imageUrl])
+
+  const download = () => {
+    const a = document.createElement('a')
+    a.href = wm || src; a.download = `smartbiz-${Date.now()}.jpg`; a.click()
+  }
+
+  if (status === 'loading') return (
+    <div style={{ height:160, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, background:'#080810', borderRadius:10 }}>
+      <div style={{ width:32, height:32, border:'3px solid rgba(224,48,48,0.2)', borderTopColor:'#e03030', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize:11, color:'#444466' }}>Generating image automatically...</div>
+    </div>
+  )
+
+  if (status === 'error') return (
+    <div style={{ textAlign:'center', padding:'20px 0', color:'#ff6060', fontSize:12 }}>⚠️ Image generation failed</div>
+  )
+
+  return (
+    <div>
+      <img src={wm || src} alt={headline} style={{ width:'100%', borderRadius:10, display:'block', animation:'fadeIn 0.3s ease' }} />
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:10 }}>
+        <button onClick={() => { const u=new Image(); u.crossOrigin='anonymous'; u.onload=()=>{ const c=document.createElement('canvas'); c.width=u.width; c.height=u.height; const x=c.getContext('2d'); x.drawImage(u,0,0); setSrc(imageUrl.replace(/seed=\d+/,`seed=${Math.floor(Math.random()*99999)}`)); setStatus('loading'); }; u.src=imageUrl }} style={{ padding:'10px', borderRadius:10, border:`1.5px solid ${C.border}`, background:'transparent', color:'#8888a0', cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700 }}>
+          ↺ Regenerate
+        </button>
+        <button onClick={download} style={{ padding:'10px', borderRadius:10, border:'none', background:'#22c55e', color:'#fff', cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700 }}>
+          ⬇ Download
+        </button>
+      </div>
+    </div>
+  )
+}
+
+
